@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+import sys       ##system
+import re        #正则
+import pysam     #python模块，它打包了htslib-1.3、samtools-1.3 和 bcftools-1.3的核心功能，能在编程时非常灵活的处理bam和bcf文件
+infile1 =pysam.AlignmentFile(sys.argv[1],"rb")    #调用AlignmentFile函数读取文件，迭代适合for循环。sys.argv[0]表示代码本身文件路径。sys.argv[1]第二个参数； r = read， b：binary.  二进制文件，迭代器
+name = sys.argv[1][:-4]+"_C_T_position_sjw.bed"   #取第一个命令行参数，但是去掉后4个字节
+outfile1 = open(name, "w")                        #写入文件
+p1 = re.compile(r"\D+")                           #用来优化正则，将正则表达式转化为对象，\D匹配非数字字符，等效于[^0-9]
+p2 = re.compile(r"\d+")                           #\d是匹配数字字符[0-9]，+匹配一个或多个
+for line in infile1:                              #用for循环对其从头到尾地遍历，并把每个值都赋给line，line在这里代表的就是比对的read信息
+	header = line.query_name                      #定义header   "read_28833_29006_6945"
+	mapq = line.mapping_quality                   #mapping质量   60
+	chr_name = str(line.reference_name)           #染色体名称  chr1
+	start_pos = line.reference_start              #start位置
+	seq = line.query_alignment_sequence           #sequence   "AGCTTAGCTAGCTACCTATATCTTGGTCTTGGCCG"
+	if mapq <= 10:
+		continue                                  #continue语句只结束本次循环，而不终止整个循环的执行
+	if line.is_read1:
+		read_info ="R1"
+
+		if line.has_tag('MD'):
+			mismatch = line.get_tag('MD')+"~"
+			refBases = p1.findall(mismatch)       #在字符串中找到正则表达式所匹配的所有子串，并返回一个列表，如果没有找到匹配的，则返回空列表；返回非数字
+			refPositions = p2.findall(mismatch)   #返回position数字
+			i =0
+			refPos = start_pos                    #参考基因组上开始的位置
+			readPos = 0                           #reads从零开始
+			while i < len(refBases)-1:            #长度
+				refBase = refBases[i]             #第几个位置的错配，参考基因组碱基
+				pos = int(refPositions[i])        #第几个位置的错配
+				readPos = readPos + pos           #reads位置
+				refPos = refPos + pos             #参考基因组位置
+				if refBase == "G" and seq[readPos] == "A" and line.is_reverse:                 #如果读取被映射到反向链，则为真
+					print(chr_name, refPos, refPos + 1, header, mapq, "-", read_info,sep="\t", file=outfile1)
+				if refBase == "C" and seq[readPos] == "T" and not line.is_reverse:             #如果读取被映射到正链，则为真
+					print(chr_name, refPos, refPos + 1, header, mapq, "+", read_info,sep="\t", file=outfile1)
+				if refBase[0] != "^":
+					readPos = readPos + 1
+					refPos = refPos + 1
+				else:
+					refPos = refPos + len(refBase)-1
+				i =i+1
+
+	if line.is_read2:
+		read_info ="R2"
+		if line.has_tag('MD'):
+			mismatch = line.get_tag('MD')+"~"
+			refBases = p1.findall(mismatch)
+			refPositions = p2.findall(mismatch)
+			i =0
+			refPos = start_pos
+			readPos = 0
+			while i < len(refBases)-1:
+				refBase = refBases[i]
+				pos = int(refPositions[i])
+				readPos = readPos + pos
+				refPos = refPos + pos
+				if refBase == "C" and seq[readPos] == "T" and line.is_reverse:
+					print(chr_name, refPos, refPos + 1, header, mapq, "+", read_info,sep="\t", file=outfile1)
+				if refBase == "G" and seq[readPos] == "A" and not line.is_reverse:
+					print(chr_name, refPos, refPos + 1, header, mapq, "-", read_info,sep="\t", file=outfile1)
+				if refBase[0] != "^":
+					readPos = readPos + 1
+					refPos = refPos + 1
+				else:
+					refPos = refPos + len(refBase)-1
+				i =i+1
+
+
+infile1.close()
+outfile1.close()
+
+
+
