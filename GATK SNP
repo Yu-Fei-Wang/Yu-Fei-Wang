@@ -1,0 +1,43 @@
+bwa mem -t 16 -M  -R "@RG\tID:2GMESWT\tSM:Input\tLB:library\tPL:Illumina\tPU:Yimu" mm10.fa 2GMESWT_R1.fq.gz 2GMESWT_R2.fq.gz | samtools fixmate -@ 9  -O bam  - Input.bam 
+   #-t 线程数   -R 设置文件title  -M Mark shorter split hits as secondary 与picard兼容 -P skip pairing; mate rescue performed unless -S also in use 
+   #samtools fixmate 为以名称排序的定位alignment填入配对坐标，ISIZE（inferred insert size猜测的插入序列大小）和配对相应的标签（flag
+  
+  bwa mem -t 16 -M  -R "@RG\tID:2GMESWT\tSM:Input\tLB:library\tPL:Illumina\tPU:Yimu" mm10.fa 2GMESWT_R1.fq.gz 2GMESWT_R2.fq.gz | samtools view -Sbh > INput1.bam
+
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" SortSam --INPUT Input.bam --OUTPUT Inpu.sorted.bam --SORT_ORDER coordinate --CREATE_INDEX true --VALIDATION_STRINGENCY STRICT
+   # sort bam 文件
+  
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" MarkDuplicates --INPUT Input.sorted.bam --OUTPUT Input.sorted.rmdup.bam \
+                  --REMOVE_DUPLICATES false --METRICS_FILE Input.metrics  --ASSUME_SORTED true --CREATE_INDEX true --VALIDATION_STRINGENCY STRICT
+   # mark那些PCR的duplicat  matrics-file 质控报告  -CREATE_INDEX 是否在写入VCF或坐标排序的BAM输出时创建索引。
+  
+  /home/a/gatk-4.2.0.0/gatk  CreateSequenceDictionary -R mm10.fa -O /home/wyff/SNP/wfz/mm10.dict  
+  #建立参考基因组 -sequence-dictionary
+  
+   /home/a/gatk-4.2.0.0/gatk IndexFeatureFile -I  Grcm38_p4.vcf  (得用mm10_new.vcf,补充chr，否则无法识别)
+   #建立VCF索引
+  
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" BaseRecalibrator -R mm10.fa -I Input.sorted.rmdup.bam  -O Input_recal_data.table \
+                  --known-sites mm10_new.vcf   --sequence-dictionary  /home/wyff/SNP/wfz/mm10.dict 
+   # 检测碱基质量分数中的系统错误，利用机器学习的方式调整原始碱基的质量分数。   -O 输出的重校准表   -knownSites 已知SNP的vcf文件
+
+
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" ApplyBQSR   -R mm10.fa -I Input.sorted.rmdup.bam -O Input.recal.bam \
+                  --bqsr Input_recal_data.table --sequence-dictionary /home/wyff/SNP/wfz/mm10.dict  
+   # 经过BQSR校正的bam文件
+  
+  
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" ValidateSamFile  -R mm10.fa -I Input.recal.bam -M SUMMARY --VALIDATE_INDEX true  
+  #验证bam文件是否有问题
+
+
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" HaplotypeCaller -R mm10.fa -I Input.recal.bam -O Input_recal_reads.g.vcf.gz      
+                                           --dbsnp mm10_new.vcf --emit-ref-confidence GVCF --sequence-dictionary /home/wyff/SNP/wfz/mm10.dict 
+                                           --native-pair-hmm-threads 16 -pairHMM FASTEST_AVAILABLE 
+   #cal SNP
+  
+  /home/a/gatk-4.2.0.0/gatk --java-options "-Xmx8g" GenotypeGVCFs   -R mm10.fa  --sequence-dictionary /home/wyff/SNP/wfz/mm10.dict 
+                                            -V Input_recal_reads.g.vcf.gz -O Input.vcf.gz --dbsnp mm10_new.vcf 
+  #提取基因型
+   /home/a/gatk-4.2.0.0/gatk   VariantFiltration -V Input.snp.vcf  -O Input.snp.recal --filter-expression 'DP<20' --filter-name lowQualFilter 最新版
+  grep PASS Input.snp.recal > Input.snp.pass.recal
