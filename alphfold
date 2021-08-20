@@ -1,0 +1,53 @@
+#Install miniconda
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh && bash Miniconda3-latest-Linux-x86_64.sh
+chmod 777 Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+chmod 777  /home/miniconda3/bin/activate     #权限
+. ./activate          #启动
+conda list           #查看
+
+#Create a new conda environment and update
+conda create --name alphafold python==3.8
+conda update -n base conda
+
+#Activate conda environment
+conda activate alphafold
+
+#Install dependencies
+conda install -y -c conda-forge openmm==7.5.1 cudnn==8.2.1.32 cudatoolkit==11.0.3 pdbfixer==1.7
+conda install -y -c bioconda hmmer==3.3.2 hhsuite==3.3.0 kalign2==2.04
+
+#Download alphafold git repo
+git clone https://github.com/deepmind/alphafold.git
+alphafold_path="/path/to/alphafold/git/repo"
+
+#Download chemical properties to the common folder
+wget -q -P alphafold/alphafold/common/ https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
+
+#Install alphafold dependencies
+pip install absl-py==0.13.0 biopython==1.79 chex==0.0.7 dm-haiku==0.0.4 dm-tree==0.1.6 immutabledict==2.0.0 jax==0.2.14 ml-collections==0.1.0 numpy==1.19.5 scipy==1.7.0 tensorflow==2.5.0
+
+pip install --upgrade jax jaxlib==0.1.69+cuda111 -f https://storage.googleapis.com/jax-releases/jax_releases.html
+
+#Apply OpenMM patch
+
+cd ~/miniconda3/envs/alphafold/lib/python3.9/site-packages/ && patch -p0  < /home/alphfold2/alphafold/docker/openmm.patch
+
+#Download databases 
+bash /home/alphfold2/download_db.sh  -d  /data2/alphafold_data  -m full_dbs
+
+bash run_alphafold.sh -d /data2/alphafold_data/  -o    -m model_1   -f *fasta  -t 2020-05-14 
+
+Usage: run_alphafold.sh <OPTIONS>
+Required Parameters:
+-d <data_dir>     Path to directory of supporting data
+-o <output_dir>   Path to a directory that will store the results.
+-m <model_names>  Names of models to use (a comma separated list)
+-f <fasta_path>   Path to a FASTA file containing one sequence
+-t <max_template_date> Maximum template release date to consider (ISO-8601 format - i.e. YYYY-MM-DD). Important if folding historical test sets
+Optional Parameters:
+-n <openmm_threads>   OpenMM threads (default: all available cores)
+-b <benchmark>    Run multiple JAX model evaluations to obtain a timing that excludes the compilation time, which should be more indicative of the time required for inferencing many proteins (default: 'False')
+-g <use_gpu>      Enable NVIDIA runtime to run with GPUs (default: True)
+-a <gpu_devices>  Comma separated list of devices to pass to 'CUDA_VISIBLE_DEVICES' (default: 0)
+-p <preset>       Choose preset model configuration - no ensembling and smaller genetic database config (reduced_dbs), no ensembling and full genetic database config  (full_dbs) or full genetic database config and 8 model ensemblings (casp14)
